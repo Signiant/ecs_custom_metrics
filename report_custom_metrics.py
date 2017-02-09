@@ -47,7 +47,7 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
         else:
             metric_dimensions = [
                 { 'Name': 'Cluster', 'Value': cluster },
-                { 'Name': 'TaskDef', 'Value': 'task_def' } ]
+                { 'Name': 'TaskDef', 'Value': 'task_family' } ]
 
         # Do the put
         response = cloudwatch.put_metric_data(
