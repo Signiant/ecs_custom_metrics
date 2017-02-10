@@ -66,10 +66,13 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
         )
 
 
-    def get_task_cluster_count(task_family):
+    def get_task_cluster_count(task_family, task_family_type):
         '''Get the count of running tasks for the given task family'''
         result = 0
-        query_result = ecs.list_tasks(cluster=cluster, family=task_family)
+        if task_family_type == 'service':
+            query_result = ecs.list_tasks(cluster=cluster, serviceName=task_family)
+        else:
+            query_result = ecs.list_tasks(cluster=cluster, family=task_family)
         if 'taskArns' in query_result:
             result = len(query_result['taskArns'])
         return result
@@ -104,12 +107,16 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
         ''' Parse task_list and return a dict containing family:count'''
         task_families = {}
         for task in task_list:
+            # Get the task type (service or family)
+            type = task['group'].split(':')[0]
             # Get the task family for this task
             family = task['group'].split(':')[-1]
             if family not in task_families:
-                task_families[family] = 1
+                task_families[family] = {}
+                task_families[family]['type'] = type
+                task_families[family]['count'] = 1
             else:
-                task_families[family] = task_families[family] + 1
+                task_families[family]['count'] = task_families[family]['count'] + 1
         return task_families
 
 
@@ -122,11 +129,11 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
 
     #Report instance task counts to CloudWatch
     for task_fam in instance_task_families:
-        put_cloudwatch_metric(task_fam, instance_task_families[task_fam], instance=True)
+        put_cloudwatch_metric(task_fam, instance_task_families[task_fam]['count'], instance=True)
 
     #Report cluster task counts to CloudWatch
     for task_fam in instance_task_families:
-        put_cloudwatch_metric(task_fam, get_task_cluster_count(task_fam))
+        put_cloudwatch_metric(task_fam, get_task_cluster_count(task_fam, instance_task_families[task_fam]['type']))
 
 
 if __name__ == "__main__":
