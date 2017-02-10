@@ -43,12 +43,15 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
             metric_dimensions = [
                 { 'Name': 'Cluster', 'Value': cluster },
                 { 'Name': 'InstanceId', 'Value': instance_id },
-                { 'Name': 'TaskDef', 'Value': task_family } ]
+                { 'Name': 'TaskFamily', 'Value': task_family } ]
         else:
             metric_dimensions = [
                 { 'Name': 'Cluster', 'Value': cluster },
-                { 'Name': 'TaskDef', 'Value': task_family } ]
+                { 'Name': 'TaskFamily', 'Value': task_family } ]
 
+        print("Pushing the following metric data to CloudWatch with dimensions: " + str(metric_dimensions))
+        print("   Task Family: %s " % task_family)
+        print("   Count: %s " % str(count))
         # Do the put
         response = cloudwatch.put_metric_data(
             Namespace=namespace,
@@ -102,7 +105,7 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
         task_families = {}
         for task in task_list:
             # Get the task family for this task
-            family = task['group'][len('family:'):]
+            family = task['group'].split(':')[-1]
             if family not in task_families:
                 task_families[family] = 1
             else:
@@ -122,8 +125,8 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
         put_cloudwatch_metric(task_fam, instance_task_families[task_fam], instance=True)
 
     #Report cluster task counts to CloudWatch
-    for task_family in instance_task_families:
-        put_cloudwatch_metric(task_family, get_task_cluster_count(task_family))
+    for task_fam in instance_task_families:
+        put_cloudwatch_metric(task_fam, get_task_cluster_count(task_fam))
 
 
 if __name__ == "__main__":

@@ -1,3 +1,3 @@
-# Report Custom Metric crontab file
 SHELL=/bin/bash
+# Report Custom Metric crontab file
 * * * * * ec2-user /usr/bin/python /opt/signiant/report_custom_metrics.py
