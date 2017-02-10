@@ -11,6 +11,8 @@ import argparse
 import urllib2
 import json
 import boto3
+import os
+import logging, logging.handlers
 
 
 def push_task_count_metrics(region=None, cluster=None, profile=None):
@@ -49,9 +51,9 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
                 { 'Name': 'Cluster', 'Value': cluster },
                 { 'Name': 'TaskFamily', 'Value': task_family } ]
 
-        print("Pushing the following metric data to CloudWatch with dimensions: " + str(metric_dimensions))
-        print("   Task Family: %s " % task_family)
-        print("   Count: %s " % str(count))
+        logger.info("Pushing the following metric data to CloudWatch with dimensions: " + str(metric_dimensions))
+        logger.info("   Task Family: %s " % task_family)
+        logger.info("   Count: %s " % str(count))
         # Do the put
         response = cloudwatch.put_metric_data(
             Namespace=namespace,
@@ -66,13 +68,13 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
         )
 
 
-    def get_task_cluster_count(task_family, task_family_type):
-        '''Get the count of running tasks for the given task family'''
+    def get_task_cluster_count(task_name, task_type):
+        '''Get the count of running tasks for the given task'''
         result = 0
-        if task_family_type == 'service':
-            query_result = ecs.list_tasks(cluster=cluster, serviceName=task_family)
+        if task_type == 'service':
+            query_result = ecs.list_tasks(cluster=cluster, serviceName=task_name)
         else:
-            query_result = ecs.list_tasks(cluster=cluster, family=task_family)
+            query_result = ecs.list_tasks(cluster=cluster, family=task_name)
         if 'taskArns' in query_result:
             result = len(query_result['taskArns'])
         return result
@@ -138,7 +140,17 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Script to get an encrypted parameter from AWS Parameter Store')
+    LOG_FILENAME = '/var/log/ecs/report_custom_metrics.log'
+    if not os.path.exists('/var/log/ecs/'):
+        os.makedirs('/var/log/ecs')
+    logger = logging.getLogger('report_custom_metrics')
+    logger.setLevel(logging.DEBUG)
+    file_handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=5242880, backupCount=5)
+    file_formatter = logging.Formatter('%(asctime)s : %(message)s')
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+
+    parser = argparse.ArgumentParser(description='Script to push custom ECS metrics to CloudWatch')
 
     parser.add_argument("--profile", help="The name of a profile to use. If not given, instance role credentials will be used", dest='profile', required=False)
     parser.add_argument("--region", help="AWS Region to query, if not provided, will use region for *this* instance", dest='region', required=False)
