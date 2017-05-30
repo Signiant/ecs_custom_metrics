@@ -68,16 +68,28 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
         )
 
 
-    def get_task_cluster_count(task_name, task_type):
+    def get_task_cluster_count(task_name, task_type, next_token=None):
         '''Get the count of running tasks for the given task'''
-        result = 0
+        task_count = 0
         if task_type == 'service':
-            query_result = ecs.list_tasks(cluster=cluster, serviceName=task_name)
+            if next_token:
+                query_result = ecs.list_tasks(cluster=cluster, serviceName=task_name, nextToken=next_token)
+            else:
+                query_result = ecs.list_tasks(cluster=cluster, serviceName=task_name)
         else:
-            query_result = ecs.list_tasks(cluster=cluster, family=task_name)
-        if 'taskArns' in query_result:
-            result = len(query_result['taskArns'])
-        return result
+            if next_token:
+                query_result = ecs.list_tasks(cluster=cluster, family=task_name, nextToken=next_token)
+            else:
+                query_result = ecs.list_tasks(cluster=cluster, family=task_name)
+
+        if 'ResponseMetadata' in query_result:
+            if 'HTTPStatusCode' in query_result['ResponseMetadata']:
+                if query_result['ResponseMetadata']['HTTPStatusCode'] == 200:
+                    if 'nextToken' in query_result:
+                        task_count += get_task_list(task_name, task_type, next_token=query_result['nextToken'])
+                    else:
+                        task_count += len(query_result['taskArns'])
+        return task_count
 
 
     def get_task_list(instance=None, next_token=None):
