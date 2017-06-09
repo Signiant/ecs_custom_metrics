@@ -15,8 +15,8 @@ import os
 from datetime import datetime, timedelta
 import logging, logging.handlers
 
-SCALE_DOWN_CPU_RESERVATION = 'ScaleDownCPUReservation'
-SCALE_DOWN_MEM_RESERVATION = 'ScaleDownMemoryReservation'
+SCALE_DOWN_CPU_RESERVATION = 'ScaleDownCPU'
+SCALE_DOWN_MEM_RESERVATION = 'ScaleDownMemory'
 CLUSTER_MIN_SIZE = 'ClusterMinSize'
 
 logging.getLogger('botocore').setLevel(logging.CRITICAL)
