@@ -1,3 +1,0 @@
-# Report Custom Metric crontab file
-SHELL=/bin/bash
-* * * * * root /usr/bin/python /opt/signiant/report_custom_metrics.py
