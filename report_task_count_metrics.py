@@ -14,21 +14,28 @@ import boto3
 import os
 import logging, logging.handlers
 
+logging.getLogger('botocore').setLevel(logging.CRITICAL)
 
-def push_task_count_metrics(region=None, cluster=None, profile=None):
+def push_task_count_metrics(region=None, cluster=None, instance_id=None, instance_arn=None, profile=None):
     '''
     For the ECS namespace, push a TaskCount metric, both for *this* instance and the whole cluster
     :param region: AWS Region to query, if none provied, use region for *this* instance
     :param cluster: Cluster to query, if none provided, use cluster *this* instance is in
     :param profile: aws cli profile to use, if none provided, use role credentials
     '''
-    if not region or not cluster:
+    # Can get the cluster and instance_arn from the metadata service if we don't have it
+    if not cluster or not instance_arn:
         instance_metadata = json.loads(urllib2.urlopen('http://localhost:51678/v1/metadata').read().decode())
-        instance_arn = instance_metadata['ContainerInstanceArn']
-        if not region:
-            region = instance_metadata['ContainerInstanceArn'].split(':')[3]
+        if not instance_arn:
+            instance_arn = instance_metadata['ContainerInstanceArn']
         if not cluster:
             cluster = instance_metadata['Cluster']
+
+    if not region:
+        region = instance_arn.split(':')[3]
+
+    if not instance_id:
+        instance_id = urllib2.urlopen('http://169.254.169.254/latest/meta-data/instance-id').read().decode()
 
     session = boto3.session.Session(profile_name=profile, region_name=region)
     ecs = session.client('ecs')
@@ -36,8 +43,6 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
 
     namespace = "ECS"
     metric_name = "TaskCount"
-
-    instance_id = urllib2.urlopen('http://169.254.169.254/latest/meta-data/instance-id').read().decode()
 
     def put_cloudwatch_metric(task_family, count, instance=False):
         ''' Push the given metric (count) to CloudWatch for this task family '''
@@ -51,9 +56,9 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
                 { 'Name': 'Cluster', 'Value': cluster },
                 { 'Name': 'TaskFamily', 'Value': task_family } ]
 
-        logger.info("Pushing the following metric data to CloudWatch with dimensions: " + str(metric_dimensions))
-        logger.info("   Task Family: %s " % task_family)
-        logger.info("   Count: %s " % str(count))
+        logging.info("Pushing the following metric data to CloudWatch with dimensions: " + str(metric_dimensions))
+        logging.info("   Task Family: %s " % task_family)
+        logging.info("   Count: %s " % str(count))
         # Do the put
         response = cloudwatch.put_metric_data(
             Namespace=namespace,
@@ -152,21 +157,28 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
 
 if __name__ == "__main__":
 
-    LOG_FILENAME = '/var/log/ecs/report_custom_metrics.log'
-    if not os.path.exists('/var/log/ecs/'):
-        os.makedirs('/var/log/ecs')
-    logger = logging.getLogger('report_custom_metrics')
-    logger.setLevel(logging.DEBUG)
-    file_handler = logging.handlers.RotatingFileHandler(LOG_FILENAME, maxBytes=5242880, backupCount=5)
-    file_formatter = logging.Formatter('%(asctime)s : %(message)s')
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
-
     parser = argparse.ArgumentParser(description='Script to push custom ECS metrics to CloudWatch')
 
     parser.add_argument("--profile", help="The name of a profile to use. If not given, instance role credentials will be used", dest='profile', required=False)
     parser.add_argument("--region", help="AWS Region to query, if not provided, will use region for *this* instance", dest='region', required=False)
     parser.add_argument("--cluster", help="Cluster to query, if not provided, will use cluster *this* instance is in", dest='cluster', required=False)
+    parser.add_argument("--instance-id", help="Instance ID to query, if not provided, will use *this* instance", dest='instance_id', required=False)
+    parser.add_argument("--instance-arn", help="Instance ARN to query, if not provided, will use *this* instance", dest='instance_arn', required=False)
     args = parser.parse_args()
 
-    push_task_count_metrics(region=args.region, cluster=args.cluster, profile=args.profile)
+    log_level = logging.INFO
+
+    if os.environ['VERBOSE']:
+        print("Verbose logging selected")
+        log_level = logging.DEBUG
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    # create console handler using level set in log_level
+    ch = logging.StreamHandler()
+    ch.setLevel(log_level)
+    console_formatter = logging.Formatter('%(levelname)8s: %(message)s')
+    ch.setFormatter(console_formatter)
+    logger.addHandler(ch)
+
+    push_task_count_metrics(region=args.region, cluster=args.cluster, instance_id=args.instance_id, instance_arn=args.instance_arn, profile=args.profile)
