@@ -16,37 +16,52 @@ import logging, logging.handlers
 
 logging.getLogger('botocore').setLevel(logging.CRITICAL)
 
-def push_task_count_metrics(region=None, cluster=None, instance_id=None, instance_arn=None, profile=None):
+def push_task_count_metrics(region=None, cluster=None, profile=None):
     '''
     For the ECS namespace, push a TaskCount metric, both for *this* instance and the whole cluster
     :param region: AWS Region to query, if none provied, use region for *this* instance
     :param cluster: Cluster to query, if none provided, use cluster *this* instance is in
     :param profile: aws cli profile to use, if none provided, use role credentials
     '''
-    # Can get the cluster and instance_arn from the metadata service if we don't have it
-    if not cluster or not instance_arn:
+    # Can get the cluster and region from the metadata service if we don't have it
+    if not region or not cluster:
         instance_metadata = json.loads(urllib2.urlopen('http://localhost:51678/v1/metadata').read().decode())
-        if not instance_arn:
-            instance_arn = instance_metadata['ContainerInstanceArn']
+        instance_arn = instance_metadata['ContainerInstanceArn']
+        if not region:
+            region = instance_arn.split(':')[3]
         if not cluster:
             cluster = instance_metadata['Cluster']
-
-    if not region:
-        region = instance_arn.split(':')[3]
-
-    if not instance_id:
-        instance_id = urllib2.urlopen('http://169.254.169.254/latest/meta-data/instance-id').read().decode()
-
-    session = boto3.session.Session(profile_name=profile, region_name=region)
-    ecs = session.client('ecs')
-    cloudwatch = session.client('cloudwatch')
 
     namespace = "ECS"
     metric_name = "TaskCount"
 
-    def put_cloudwatch_metric(task_family, count, instance=False):
+    def get_cluster_instances(next_token=None):
+        '''Get the cluster instances in this cluster'''
+        instance_list = {}
+        if next_token:
+            query_result = ecs.list_container_instances(cluster=cluster, status='ACTIVE', nextToken=next_token)
+        else:
+            query_result = ecs.list_container_instances(cluster=cluster, status='ACTIVE')
+
+        if 'ResponseMetadata' in query_result:
+            if 'HTTPStatusCode' in query_result['ResponseMetadata']:
+                if query_result['ResponseMetadata']['HTTPStatusCode'] == 200:
+                    if 'nextToken' in query_result:
+                        instance_list.extend(get_cluster_instances(next_token=query_result['nextToken']))
+                    else:
+                        for inst in query_result['containerInstanceArns']:
+                            inst_id = 'Unknown'
+                            dci_result = ecs.describe_container_instances(cluster=cluster, containerInstances=[inst])
+                            if 'containerInstances' in dci_result:
+                                if 'ec2InstanceId' in dci_result['containerInstances'][0]:
+                                    inst_id = dci_result['containerInstances'][0]['ec2InstanceId']
+                            instance_list[inst] = inst_id
+        return instance_list
+
+
+    def put_cloudwatch_metric(task_family, count, instance_id=None):
         ''' Push the given metric (count) to CloudWatch for this task family '''
-        if instance:
+        if instance_id:
             metric_dimensions = [
                 { 'Name': 'Cluster', 'Value': cluster },
                 { 'Name': 'InstanceId', 'Value': instance_id },
@@ -138,21 +153,42 @@ def push_task_count_metrics(region=None, cluster=None, instance_id=None, instanc
                 task_families[family]['count'] = task_families[family]['count'] + 1
         return task_families
 
+    session = boto3.session.Session(profile_name=profile, region_name=region)
+    ecs = session.client('ecs')
+    cloudwatch = session.client('cloudwatch')
 
-    # Get running tasks on this instance
-    instance_task_list = get_task_list(instance=instance_arn)
+    instances_to_check = get_cluster_instances()
 
-    # Figure out task families from list of tasks
-    query_result = ecs.describe_tasks(cluster=cluster, tasks=instance_task_list)
-    instance_task_families = parse_tasks(query_result['tasks'])
+    cluster_task_families = {}
+    for instance in instances_to_check:
+        # Get running tasks on this instance
+        instance_task_list = get_task_list(instance=instance)
 
-    #Report instance task counts to CloudWatch
-    for task_fam in instance_task_families:
-        put_cloudwatch_metric(task_fam, instance_task_families[task_fam]['count'], instance=True)
+        # Figure out task families from list of tasks
+        query_result = ecs.describe_tasks(cluster=cluster, tasks=instance_task_list)
+        instance_task_families = parse_tasks(query_result['tasks'])
 
-    #Report cluster task counts to CloudWatch
-    for task_fam in instance_task_families:
-        put_cloudwatch_metric(task_fam, get_task_cluster_count(task_fam, instance_task_families[task_fam]['type']))
+        if DRYRUN:
+            logging.info('Instance task counts for instance ID %s:' % instances_to_check[instance])
+        for task_fam in instance_task_families:
+            # Add this task family to the list if not already there
+            if task_fam not in cluster_task_families:
+                cluster_task_families[task_fam] = instance_task_families[task_fam]['type']
+            if not DRYRUN:
+                # Report instance task counts to CloudWatch
+                put_cloudwatch_metric(task_fam, instance_task_families[task_fam]['count'], instances_to_check[instance])
+            else:
+                logging.info('   Task Family: %s, Count: %s, Instance: %s' % (task_fam, instance_task_families[task_fam]['count'], instances_to_check[instance]))
+
+    if DRYRUN:
+        logging.info('Cluster task counts:')
+    for task_fam in cluster_task_families:
+        task_cluster_count = get_task_cluster_count(task_fam, cluster_task_families[task_fam])
+        if not DRYRUN:
+            # Report cluster task counts to CloudWatch
+            put_cloudwatch_metric(task_fam, task_cluster_count)
+        else:
+            logging.info('   Task Family: %s, Count: %s' % (task_fam, task_cluster_count))
 
 
 if __name__ == "__main__":
@@ -162,15 +198,19 @@ if __name__ == "__main__":
     parser.add_argument("--profile", help="The name of a profile to use. If not given, instance role credentials will be used", dest='profile', required=False)
     parser.add_argument("--region", help="AWS Region to query, if not provided, will use region for *this* instance", dest='region', required=False)
     parser.add_argument("--cluster", help="Cluster to query, if not provided, will use cluster *this* instance is in", dest='cluster', required=False)
-    parser.add_argument("--instance-id", help="Instance ID to query, if not provided, will use *this* instance", dest='instance_id', required=False)
-    parser.add_argument("--instance-arn", help="Instance ARN to query, if not provided, will use *this* instance", dest='instance_arn', required=False)
+    parser.add_argument("--dryrun", help="dryrun mode - don't push any metrics to cloudwatch - print to console", action='store_true')
+    parser.add_argument("--verbose", help="Turn on DEBUG logging", action='store_true', required=False)
     args = parser.parse_args()
 
     log_level = logging.INFO
 
-    if os.environ['VERBOSE']:
+    if args.verbose:
         print("Verbose logging selected")
         log_level = logging.DEBUG
+
+    DRYRUN = False
+    if args.dryrun:
+        DRYRUN = True
 
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
@@ -181,4 +221,4 @@ if __name__ == "__main__":
     ch.setFormatter(console_formatter)
     logger.addHandler(ch)
 
-    push_task_count_metrics(region=args.region, cluster=args.cluster, instance_id=args.instance_id, instance_arn=args.instance_arn, profile=args.profile)
+    push_task_count_metrics(region=args.region, cluster=args.cluster, profile=args.profile)

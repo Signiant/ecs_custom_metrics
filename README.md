@@ -1,18 +1,31 @@
 # ecs-custom-metrics
-Report Custom ECS Metrics to AWS CloudWatch
+Report Custom ECS Metrics to AWS CloudWatch. The idea is to run a container on an ECS instance in a cluster to report
+the custom metrics for that cluster.
 
 ## Variables
 
-- VERBOSE - enable more logging if set to 1
+- FREQUENCY - how often to report metrics (defaults to 300 seconds if not specified)
 
 ## Example Docker run
 
-This example mounts the local file '/env_var_script.sh' into the container at '/env_var_script.sh' (This is used
-by the commands to be run) Verbose output is enabled by setting the VERBOSE environment variable. Finally
-the commands to run are provided as input to the docker container using the -c option.
+This example runs the metrics collection report scripts (report_task_count_metrics.py and report_scale_down_metric.py)
+every 60 seconds. The scripts to run are passed in via the -c option. In this case, the two scripts are contained in
+the docker image, but there is no reason why more scripts couldn't be mounted into the container and run as well (see
+example 2).
 
->docker run --rm \
-> -e "VERBOSE=1" \
-> -v /env_var_script.sh:/env_var_script.sh signiant/ecs_custom_metrics \
-> -c 'source /env_var_script.sh && python /report_task_count_metrics.py --region $regionName --cluster $clusterName --instance-id $instanceId --instance-arn $instanceArn' \
-> -c 'source /env_var_script.sh && python /report_scale_down_metric.py --region $regionName --cluster $clusterName --stack-name $stackName'
+Example 1:
+
+>docker run -d \
+> -e "FREQUENCY=60" \
+> signiant/ecs_custom_metrics \
+> -c "python /report_task_count_metrics.py" \
+> -c "python /report_scale_down_metric.py --cpu 40 --mem 40 --min-cluster-size 1"
+
+Example 2:
+
+>docker run -d \
+> -e "FREQUENCY=60" \
+> -v /path/to/additional_script_to_run.sh:/another_report_script.sh \
+> signiant/ecs_custom_metrics \
+> -c "python /report_task_count_metrics.py" \
+> -c "/bin/bash /another_report_script.sh"

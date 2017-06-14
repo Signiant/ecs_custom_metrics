@@ -21,7 +21,7 @@ CLUSTER_MIN_SIZE = 'ClusterMinSize'
 
 logging.getLogger('botocore').setLevel(logging.CRITICAL)
 
-def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=None, region=None, cluster_name=None, profile=None):
+def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=None, min_cluster_size=None, region=None, cluster_name=None, profile=None):
     '''
     For the ECS namespace, push a ScaleDown metric
     :param stack_name: Stack to query for CPU and MEM thresholds for scaling down
@@ -38,9 +38,16 @@ def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=No
         if not cluster_name:
             cluster_name = instance_metadata['Cluster']
 
-    if not stack_name and ( not cpu_threshold or not mem_threshold):
-        logging.critical('Unable to proceed - need either stack_name or cpu and mem thresholds')
+    if not stack_name and ( not cpu_threshold or not mem_threshold or not min_cluster_size):
+        logging.critical('Unable to proceed - need either stack_name OR cpu and mem thresholds and minimum cluster size')
         exit(1)
+
+    if stack_name:
+        logging.debug("Stack name provided: %s" % stack_name)
+    else:
+        logging.debug("CPU Threshold: %s " % cpu_threshold)
+        logging.debug("Memory Threshold: %s " % mem_threshold)
+        logging.debug("Min cluster size: %s " % min_cluster_size)
 
     session = boto3.session.Session(profile_name=profile, region_name=region)
     ecs = session.client('ecs')
@@ -140,8 +147,8 @@ def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=No
             elif param['ParameterKey'] == CLUSTER_MIN_SIZE:
                 min_cluster_size = int(param['ParameterValue'])
 
-    if not cpu_threshold or not mem_threshold:
-        logging.critical('Not able to determine scale down CPU or Memory thresholds - aborting')
+    if not cpu_threshold or not mem_threshold or not min_cluster_size:
+        logging.critical('Not able to determine scale down CPU or Memory thresholds or Mimumum cluster size - aborting')
         exit(1)
 
     # Get end_time - now
@@ -155,7 +162,7 @@ def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=No
 
     scale_down_cpu = False
     if 'CPU' in avg_stats:
-        if int(avg_stats['CPU']) < cpu_threshold:
+        if int(avg_stats['CPU']) < int(cpu_threshold):
             logging.debug('Based on CPU, need a scale down')
             scale_down_cpu = True
         else:
@@ -163,7 +170,7 @@ def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=No
 
     scale_down_mem = False
     if 'Mem' in avg_stats:
-        if int(avg_stats['Mem']) < mem_threshold:
+        if int(avg_stats['Mem']) < int(mem_threshold):
             logging.debug('Based on Memory, need a scale down')
             scale_down_mem = True
         else:
@@ -173,14 +180,17 @@ def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=No
 
     scale_down_metric = 0
     if scale_down_cpu and scale_down_mem:
-        if current_cluster_size > min_cluster_size:
+        if current_cluster_size > int(min_cluster_size):
             logging.debug('Both CPU and Memory are below thresholds, and cluster size is above Min Cluster Size - post a scale down metric')
             scale_down_metric = 1
         else:
             logging.debug('Both CPU and Memory are below thresholds, but cluster size is already at Min Cluster Size')
 
-    #Report scale down metric to CloudWatch
-    put_cloudwatch_metric(scale_down_metric)
+    if not DRYRUN:
+        #Report scale down metric to CloudWatch
+        put_cloudwatch_metric(scale_down_metric)
+    else:
+        logging.info('Scale Down Metric: %s' % scale_down_metric)
 
 
 if __name__ == "__main__":
@@ -190,17 +200,23 @@ if __name__ == "__main__":
     parser.add_argument("--stack-name", help="Stack name to read from", dest='stack_name')
     parser.add_argument("--cpu", help="CPU Scale down threshold", dest='cpu_threshold')
     parser.add_argument("--mem", help="MEM Scale down threshold", dest='mem_threshold')
+    parser.add_argument("--min-cluster-size", help="Minimum Cluster Size", dest='min_cluster_size')
     parser.add_argument("--profile", help="The name of a profile to use. If not given, instance role credentials will be used", dest='profile', required=False)
     parser.add_argument("--region", help="AWS Region to query, if not provided, will use region for *this* instance", dest='region', required=False)
     parser.add_argument("--cluster", help="Cluster to query, if not provided, will use cluster *this* instance is in", dest='cluster', required=False)
+    parser.add_argument("--dryrun", help="dryrun mode - don't push any metrics to cloudwatch - print to console", action='store_true')
     parser.add_argument("--verbose", help="Turn on DEBUG logging", action='store_true', required=False)
     args = parser.parse_args()
 
     log_level = logging.INFO
 
-    if os.environ['VERBOSE']:
+    if args.verbose:
         print("Verbose logging selected")
         log_level = logging.DEBUG
+
+    DRYRUN = False
+    if args.dryrun:
+        DRYRUN = True
 
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
@@ -211,13 +227,14 @@ if __name__ == "__main__":
     ch.setFormatter(console_formatter)
     logger.addHandler(ch)
 
-    if not args.stack_name and (not args.cpu_threshold or not args.mem_threshold):
+    if not args.stack_name and (not args.cpu_threshold or not args.mem_threshold or not args.min_cluster_size):
         logger.critical('Unable to proceed - please provide either a stack name OR CPU and Memory thresholds')
         exit(1)
 
     push_scale_down_metric(stack_name=args.stack_name,
                            cpu_threshold=args.cpu_threshold,
                            mem_threshold=args.mem_threshold,
+                           min_cluster_size=args.min_cluster_size,
                            region=args.region,
                            cluster_name=args.cluster,
                            profile=args.profile)

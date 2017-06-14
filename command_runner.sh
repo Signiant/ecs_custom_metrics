@@ -1,6 +1,5 @@
 #!/bin/bash
 
-VERBOSE=0
 SCRIPTS=()
 while getopts ":c:h" OPT; do
     case $OPT in
@@ -25,10 +24,30 @@ while getopts ":c:h" OPT; do
     esac
 done
 
-echo "${SCRIPTS[@]}"
+# Set a default frequency of 300 seconds (5 minutes) if not set in the env
+if [ -z "$FREQUENCY" ]; then
+    echo "FREQUENCY not set - defaulting to 300 seconds"
+    FREQUENCY=300
+fi
 
-for command in "${SCRIPTS[@]}"
+echo "Will run the following commands every ${FREQUENCY} seconds:"
+printf '%s\n' "${SCRIPTS[@]}"
+echo
+
+# Loop forever, sleeping for our frequency
+while true
 do
-    echo "Running $command"
-    eval "$command"
+    echo "Awoke to post ECS custom metrics"
+
+    for command in "${SCRIPTS[@]}"
+    do
+        echo "Running $command"
+        eval "$command"
+    done
+
+    echo "Sleeping for $FREQUENCY seconds"
+    sleep $FREQUENCY
+    echo
 done
+
+exit 0
