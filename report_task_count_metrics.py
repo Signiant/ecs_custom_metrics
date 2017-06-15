@@ -71,9 +71,9 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
                 { 'Name': 'Cluster', 'Value': cluster },
                 { 'Name': 'TaskFamily', 'Value': task_family } ]
 
-        logging.info("Pushing the following metric data to CloudWatch with dimensions: " + str(metric_dimensions))
-        logging.info("   Task Family: %s " % task_family)
-        logging.info("   Count: %s " % str(count))
+        logging.debug("Pushing the following metric data to CloudWatch with dimensions: " + str(metric_dimensions))
+        logging.debug("   Task Family: %s " % task_family)
+        logging.debug("   Count: %s " % str(count))
         # Do the put
         response = cloudwatch.put_metric_data(
             Namespace=namespace,

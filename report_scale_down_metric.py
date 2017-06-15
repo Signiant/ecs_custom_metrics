@@ -60,8 +60,8 @@ def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=No
         metric_name = "ScaleDown"
         metric_dimensions = [{ 'Name': 'Cluster', 'Value': cluster_name }]
 
-        logging.info("Pushing the following metric data to CloudWatch with dimensions: " + str(metric_dimensions))
-        logging.info("   ScaleDown: %d " % scale_down)
+        logging.debug("Pushing the following metric data to CloudWatch with dimensions: " + str(metric_dimensions))
+        logging.debug("   ScaleDown: %d " % scale_down)
         response = cloudwatch.put_metric_data(
             Namespace=namespace,
             MetricData=[
@@ -181,7 +181,7 @@ def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=No
     scale_down_metric = 0
     if scale_down_cpu and scale_down_mem:
         if current_cluster_size > int(min_cluster_size):
-            logging.debug('Both CPU and Memory are below thresholds, and cluster size is above Min Cluster Size - post a scale down metric')
+            logging.info('Both CPU and Memory are below thresholds, and cluster size is above Min Cluster Size - post a scale down metric')
             scale_down_metric = 1
         else:
             logging.debug('Both CPU and Memory are below thresholds, but cluster size is already at Min Cluster Size')
