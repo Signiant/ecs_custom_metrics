@@ -136,16 +136,18 @@ def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=No
             if 'Parameters' in ds_result['Stacks'][0]:
                 return ds_result['Stacks'][0]['Parameters']
 
-    min_cluster_size = 1
     if stack_name:
         stack_params = get_stack_parameters(stack_name)
         for param in stack_params:
             if param['ParameterKey'] == SCALE_DOWN_CPU_RESERVATION:
                 cpu_threshold = int(param['ParameterValue'])
+                logging.debug("CPU Threshold: %s " % cpu_threshold)
             elif param['ParameterKey'] == SCALE_DOWN_MEM_RESERVATION:
                 mem_threshold = int(param['ParameterValue'])
+                logging.debug("Memory Threshold: %s " % mem_threshold)
             elif param['ParameterKey'] == CLUSTER_MIN_SIZE:
                 min_cluster_size = int(param['ParameterValue'])
+                logging.debug("Min cluster size: %s " % min_cluster_size)
 
     if not cpu_threshold or not mem_threshold or not min_cluster_size:
         logging.critical('Not able to determine scale down CPU or Memory thresholds or Mimumum cluster size - aborting')
@@ -177,10 +179,11 @@ def push_scale_down_metric(stack_name=None, cpu_threshold=None, mem_threshold=No
             logging.debug('Based on Memory, DO NOT need a scale down')
 
     current_cluster_size = get_current_cluster_size(cluster_name)
+    logging.debug('Current cluster size: %s' % str(int(current_cluster_size)))
 
     scale_down_metric = 0
     if scale_down_cpu and scale_down_mem:
-        if current_cluster_size > int(min_cluster_size):
+        if int(current_cluster_size) > int(min_cluster_size):
             logging.info('Both CPU and Memory are below thresholds, and cluster size is above Min Cluster Size - post a scale down metric')
             scale_down_metric = 1
         else:
