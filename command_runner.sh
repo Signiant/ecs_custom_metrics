@@ -23,6 +23,7 @@ while getopts ":c:h" OPT; do
             ;;
     esac
 done
+shift $((OPTIND-1))
 
 # Set a default frequency of 300 seconds (5 minutes) if not set in the env
 if [ -z "$FREQUENCY" ]; then
