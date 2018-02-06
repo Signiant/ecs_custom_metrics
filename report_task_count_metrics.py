@@ -131,6 +131,7 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
             if 'HTTPStatusCode' in query_result['ResponseMetadata']:
                 if query_result['ResponseMetadata']['HTTPStatusCode'] == 200:
                     if 'nextToken' in query_result:
+                        running_tasks.extend(query_result['taskArns'])
                         running_tasks.extend(get_task_list(instance=instance, next_token=query_result['nextToken']))
                     else:
                         running_tasks.extend(query_result['taskArns'])
@@ -165,20 +166,23 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
         instance_task_list = get_task_list(instance=instance)
 
         # Figure out task families from list of tasks
-        query_result = ecs.describe_tasks(cluster=cluster, tasks=instance_task_list)
-        instance_task_families = parse_tasks(query_result['tasks'])
+        if len(instance_task_list) > 0:
+            query_result = ecs.describe_tasks(cluster=cluster, tasks=instance_task_list)
+            instance_task_families = parse_tasks(query_result['tasks'])
 
-        if DRYRUN:
-            logging.info('Instance task counts for instance ID %s:' % instances_to_check[instance])
-        for task_fam in instance_task_families:
-            # Add this task family to the list if not already there
-            if task_fam not in cluster_task_families:
-                cluster_task_families[task_fam] = instance_task_families[task_fam]['type']
-            if not DRYRUN:
-                # Report instance task counts to CloudWatch
-                put_cloudwatch_metric(task_fam, instance_task_families[task_fam]['count'], instances_to_check[instance])
-            else:
-                logging.info('   Task Family: %s, Count: %s, Instance: %s' % (task_fam, instance_task_families[task_fam]['count'], instances_to_check[instance]))
+            if DRYRUN:
+                logging.info('Instance task counts for instance ID %s:' % instances_to_check[instance])
+            for task_fam in instance_task_families:
+                # Add this task family to the list if not already there
+                if task_fam not in cluster_task_families:
+                    cluster_task_families[task_fam] = instance_task_families[task_fam]['type']
+                if not DRYRUN:
+                    # Report instance task counts to CloudWatch
+                    put_cloudwatch_metric(task_fam, instance_task_families[task_fam]['count'], instances_to_check[instance])
+                else:
+                    logging.info('   Task Family: %s, Count: %s, Instance: %s' % (task_fam, instance_task_families[task_fam]['count'], instances_to_check[instance]))
+        else:
+            logging.warn('Empty task list from instance: %s' % instance)
 
     if DRYRUN:
         logging.info('Cluster task counts:')
