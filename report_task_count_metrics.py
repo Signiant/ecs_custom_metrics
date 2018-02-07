@@ -106,7 +106,8 @@ def push_task_count_metrics(region=None, cluster=None, profile=None):
             if 'HTTPStatusCode' in query_result['ResponseMetadata']:
                 if query_result['ResponseMetadata']['HTTPStatusCode'] == 200:
                     if 'nextToken' in query_result:
-                        task_count += get_task_list(task_name, task_type, next_token=query_result['nextToken'])
+                        task_count += len(query_result['taskArns'])
+                        task_count += get_task_cluster_count(task_name, task_type, next_token=query_result['nextToken'])
                     else:
                         task_count += len(query_result['taskArns'])
         return task_count
