@@ -6,6 +6,16 @@ the custom metrics for that cluster.
 
 - FREQUENCY - how often to report metrics (defaults to 300 seconds if not specified)
 
+
+## Known Issues
+
+Please note that FREQUENCY is a bit of a misnomer, it should probably be called DELAY or something similar. In fact what
+happens is that the scripts are run, then the task sleeps for the duration of FREQUENCY. What that means is that if you
+wanted to run the scripts every minute for instance (FREQUENCY=60), you may end up missing a run every once in a while,
+depending on how long the script(s) take to run. The solution to this is to use a scheduler (coupled with threading) to
+make sure the scripts start using the given FREQUENCY.
+
+
 ## Example Docker run
 
 This example runs the metrics collection report scripts (report_task_count_metrics.py and report_scale_down_metric.py)
